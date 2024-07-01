@@ -1,0 +1,177 @@
+﻿@* 发送*@
+@page "/wallet/tronsend/{Id}"
+@using TronNet
+@using fair.extensions.wallet.entity.tron
+@using fair.extensions.wallet.services.wallet
+@using System.Security.Cryptography;
+@using System.Text;
+@using fair.extensions.wallet.services.wallet.tron
+@layout SinglePage
+@inherits PageBase
+
+<UQRScaner FoundCode="QRFoundCode" @bind-Scanning="@scanning"></UQRScaner>
+<UPage ContentPadding>
+    <TitlePanel>
+        @Localer["发送代币"]
+    </TitlePanel>
+    <ContentPanel>
+        @if (tronTransaction != null)
+        {
+            if (tronTransaction.SignCode == null)
+            {
+                <UNotification Color="Color.Warning">该操作需要解密私钥到内存（花费时间1毫秒以内），您可以断开网络后再确认签名</UNotification>
+
+                <UForm SubmitButtonText="@Localer["确认签名"]" OnSubmit="ToSignTransaction">
+
+                    <UFormInput @bind-Value="@signPassword" Label="签名密码" Vail="^[\S]{8,64}$" ErrMsg="@Localer["不少于8个字符"]" Required></UFormInput>
+                 </UForm>
+
+            }
+            else
+            {
+                <div>交易已签名，请开启网络，广播当前交易</div>
+                <br />
+                <UButton IsLarge  IsFullwidth @onclick="()=>BoastTransaction()">
+                    @Localer["广播交易"]
+                </UButton>
+            }
+        }
+
+        else
+        {
+            @if (coinSender != null)
+            {
+
+                <UForm SubmitButtonText="@Localer["发起交易"]" OnSubmit="Send">
+                    <UFormInput @bind-Value="@coinSender.PubKey" Label="发送方" Vail="^T[a-zA-Z0-9]{20,64}$" readonly></UFormInput>
+
+                    <UFormInput @bind-Value="@coinGeter" Label="接收方" RightIcon="scan-code" Vail="^T[a-zA-Z0-9]{20,64}$" ErrMsg="@Localer["以T开头的地址"]" Required RightClick='(a,b)=>{ Console.WriteLine("rightIcon Click");scanning=true;this.InvokeAsync(()=>StateHasChanged());}'></UFormInput>
+
+                     <UFormSelect @bind-SelectValue="@coinType" Label="代币类型">
+                         @foreach (var asset in coinSender.Asets)
+                        {
+                            <option value="@asset.Name">@asset.Name （余额: @(asset.Balance)）</option>
+                        }
+                    </UFormSelect>
+                    <UFormInput @bind-Value="@amount" Label="发送金额" Vail="^[\d\.]+?$" Required></UFormInput>
+                 </UForm>
+            }
+        }
+    </ContentPanel>
+</UPage>
+
+@code {
+
+
+
+    bool scanning { get; set; }
+
+    /// <summary>
+    /// 代币类型
+    /// </summary>
+    string coinType { get; set; }
+
+
+    BaseCoin coinSender { get; set; }
+
+
+    /// <summary>
+    /// 接收者
+    /// </summary>
+    string coinGeter { get; set; }
+
+    /// <summary>
+    /// 发送金额
+    /// </summary>
+    string amount { get; set; } = "0";
+
+    string signPassword { get; set; }
+
+    TransactionData tronTransaction;
+
+    TronHttpClient walletProcesser;
+
+    void QRFoundCode(object obj, string code)
+    {
+        scanning = false;
+        coinGeter = code;
+        this.InvokeAsync(() => StateHasChanged());
+    }
+
+
+    async void ToSignTransaction()
+    {
+
+        string priKey = walletService.GetSeedPriKey(signPassword, coinSender.Seed);
+        await walletProcesser.SignTransaction(tronTransaction, priKey);
+
+        StateHasChanged();
+    }
+
+    void BoastTransaction()
+    {
+
+        try
+        {
+            walletProcesser.BoastTransaction(tronTransaction);
+
+
+            Alert("发送", $"{coinSender.PubKey} 发送 {amount} 给 {coinGeter} 已广播");
+        }
+        catch (Exception e)
+        {
+            Alert("出错", e.Message);
+        }
+
+    }
+
+    async void Send()
+    {
+        try
+        {
+
+            Int64 intAmount = Int64.Parse(amount) * 1_000_000L;
+            tronTransaction = await walletProcesser.CreateTransaction(coinSender.PubKey, coinGeter, intAmount);
+            StateHasChanged();
+
+
+        }
+        catch (Exception e)
+        {
+            Alert("", e.Message);
+
+        }
+    }
+
+    Chain _Chain;
+
+    [Parameter]
+    public string Id { get; set; }
+
+    protected override Task OnInitializedAsync()
+    {
+        Task.Run((Func<Task>)(async () =>
+    {
+        Guid id = Guid.Parse(Id);
+        var user = await walletService.GetLocalUserAsync();
+        entity.BaseCoin coin = user.UserCoin.Coins.FirstOrDefault(m => m.Id == id);
+        _Chain = Chain.CoinNets.FirstOrDefault(m => m.Id == coin.ChainId);
+        walletProcesser = new TronHttpClient(_Chain);
+        if (coin.Asets?.Count > 0)
+        {
+            coinType = coin.Asets[(int)0].Name;
+        }
+        else
+        {
+            coin.Asets = new List<CoinAset>();
+        }
+        if (coin != null) coinSender = coin;
+
+        Console.WriteLine($"coin:{coinSender?.PubKey},{coinSender?.Id}");
+        await this.InvokeAsync(() => this.StateHasChanged());
+
+    }));
+
+        return base.OnInitializedAsync();
+    }
+}

@@ -1,0 +1,295 @@
+﻿@page "/wallet/login"
+@using System.Text;
+@using System.Security.Cryptography;
+@using TronNet.Crypto;
+@using TronNet;
+@inherits PageBase
+@layout SinglePage
+
+
+<UPage ContentPadding>
+    <TitlePanel>
+        @Localer["主钱包导入"]
+    </TitlePanel>
+    <ContentPanel>
+        <UNotification Color="Color.Warning">为了您的私钥或助记语安全，建议您先关闭其它程序，切换到飞行模式,并观察四周是否有人偷窥，确保安全后再进行操作。</UNotification>
+        @if (!IsHelpWordImport && !IsPriKeyImport)
+        {
+
+            <UButton IsLarge IsFullwidth @onclick="()=>IsPriKeyImport=true">@Localer["私钥"]</UButton>
+            <br />
+            <UButton IsLarge IsFullwidth @onclick="()=>IsHelpWordImport=true">Fair @Localer["助记语"]</UButton>
+            @if (hasTronWeb == true)
+            {
+                <br />
+
+                <UButton IsLarge IsFullwidth @onclick='()=>ToLogin("tron")'>Tron @Localer["Tron钱包"]</UButton>
+            }
+            @if (hasEthWeb == true)
+            {
+                <br />
+
+                <UButton IsLarge IsFullwidth @onclick='()=>ToLogin("ether")'>Ethereum @Localer["Ehternum钱包"]</UButton>
+            }
+        }
+        else
+        {
+            <UForm SubmitButtonText="@Localer["导入"]" OnSubmit="Import">
+
+                @if (IsHelpWordImport)
+                {
+                    <UFormSelect @bind-SelectValue="@PreHelpWord" Label="@Localer["助记语前缀"]">
+                        <option value="fair">Fair</option>
+                        <option value="world">World</option>
+                        <option value="pure">Pure</option>
+                        <option value="love">Love</option>
+                        <option value="game">Game</option>
+                        <option value="hard">Hard</option>
+                        <option value="">不设定</option>
+                    </UFormSelect>
+                    <UFormInput @bind-Value="@HelpWord" Label="助记语" Vail="^[\S]{12,40}$" ErrMsg="12~40个字符,支持多国语言文字,请牢记" Required></UFormInput>
+                }
+                @if (IsPriKeyImport)
+                {
+                    <UFormInput @bind-Value="@PriKey" Label="您的私钥" Vail="^[\S]{32,64}$" ErrMsg="32~64个字符" Required></UFormInput>
+                }
+
+                <UFormInput @bind-Value="@Password" Label="交易签名密码" Vail="^[\S]{8,64}$" ErrMsg="@Localer["不少于8个字符.请牢记,丢失了就只能重新导入"]" Required></UFormInput>
+
+            </UForm>
+        }
+    </ContentPanel>
+</UPage>
+
+@code {
+    bool IsPriKeyImport { get; set; } = false;
+
+    bool IsHelpWordImport { get; set; } = false;
+    /// <summary>
+    /// 助记词前缀
+    /// </summary>
+    string PreHelpWord { get; set; } = "fair";
+    string Password { get; set; }
+
+    string HelpWord { get; set; }
+
+    string PriKey { get; set; }
+
+    bool? hasTronWeb { get; set; }
+
+    bool? hasEthWeb { get; set; }
+    /// <summary>
+    /// 正在登录
+    /// </summary>
+    bool Logging { get; set; } = false;
+
+    void IntoHomePage()
+    {
+        navManager.NavigateTo("/");
+    }
+
+    async void Import()
+    {
+        string priKey = null;
+
+        SHA256 s256 = SHA256.Create();
+        if (IsHelpWordImport)
+        {
+            if (HelpWord.Length < 12)
+            {
+                Alert("", "助记词长度不能小于12个字符");
+                return;
+            }
+
+            priKey = FairWalletHelper.FairHelpWordToPrikey(PreHelpWord, HelpWord);
+        }
+        else
+        {
+            priKey = PriKey.Trim();
+        }
+
+        LocalUser localUser = new LocalUser();
+
+        #region 生成本地账户的公钥和私钥，并给私钥加密
+
+        string pubKey = FairWalletHelper.GetEtherWalletAddress(priKey);
+
+        string priSafeKey = walletService.GetSafePriKey(priKey, Password);
+
+        localUser.Account = pubKey;
+        localUser.Key = priSafeKey;
+        #endregion
+
+
+        #region 生成本体账户（导入的私钥就）
+
+        //波场号
+        string tronPubKey1 = FairWalletHelper.GetTronWalletAddress(priKey);
+        localUser.UserCoin.Coins.Add(new TronCoin
+            {
+                Id = Guid.NewGuid(),
+                PubKey = tronPubKey1,
+                Seed = 0,
+                ChainId = Chain.CoinNets.FirstOrDefault(m => m.Currency == "TRX")?.Id,
+                UpdateTime = DateTime.UtcNow,
+                SortId = DateTime.UtcNow.Ticks,
+                Remark = "TRX"
+            });
+        //以太坊
+        string ethPubKey1 = FairWalletHelper.GetEtherWalletAddress(priKey);
+        localUser.UserCoin.Coins.Add(new TronCoin
+            {
+                Id = Guid.NewGuid(),
+                PubKey = ethPubKey1,
+                Seed = 0,
+                ChainId = Chain.CoinNets.FirstOrDefault(m => m.Currency == "ETH")?.Id,
+                UpdateTime = DateTime.UtcNow,
+                SortId = DateTime.UtcNow.Ticks,
+                Remark = "ETH"
+            });
+
+
+        #endregion
+
+
+        #region 设置当前账户
+        fair.extensions.shared.entity.WalletAccount mainAccount = new shared.entity.WalletAccount();
+        mainAccount.Account = ethPubKey1;
+        mainAccount.ChainId = "ether";
+        mainAccount.AccountType = "inner";
+        mainAccount.TokenExpTime = DateTime.UtcNow.AddYears(1).Ticks;
+        mainAccount.NickName = "I" + ethPubKey1.Substring(ethPubKey1.Length - 6);
+        byte[] msgdata = Encoding.UTF8.GetBytes($"{mainAccount.ChainId}#{mainAccount.Account}#{mainAccount.NickName}#{mainAccount.TokenExpTime}");
+        mainAccount.Sign = FairWalletHelper.SignData(priKey, msgdata);
+        await accountService.ChangeAccountAsync(mainAccount);
+        #endregion
+
+
+        #region 自动生成一个TRX子账户
+        string seed1PriKey = null;
+        int seed = 1;
+      
+        seed1PriKey = FairWalletHelper.GenerateSeedKey(priKey, seed.ToString());
+      
+        tronPubKey1 = FairWalletHelper.GetTronWalletAddress(seed1PriKey);
+
+        localUser.UserCoin.Coins.Add(new TronCoin
+            {
+                Id = Guid.NewGuid(),
+                PubKey = tronPubKey1,
+                Seed = seed,
+                ChainId = Chain.CoinNets.FirstOrDefault(m => m.Currency == "TRX")?.Id,
+                UpdateTime = DateTime.UtcNow,
+                SortId = DateTime.UtcNow.AddDays(-1).Ticks,
+                Remark = "TRX"
+            });
+        #endregion
+
+        #region 自动生成一个ETH子账户
+
+        ethPubKey1 = FairWalletHelper.GetEtherWalletAddress(seed1PriKey);
+        localUser.UserCoin.Coins.Add(new EthCoin
+            {
+                Id = Guid.NewGuid(),
+                PubKey = ethPubKey1,
+                ChainId = Chain.CoinNets.FirstOrDefault(m => m.Currency == "ETH")?.Id,
+                Seed = seed,
+                SortId = DateTime.UtcNow.AddDays(-1).Ticks,
+                UpdateTime = DateTime.UtcNow,
+                Remark = "ETH"
+            });
+        #endregion
+
+        //缓存本地用户信息
+        await walletService.SaveLocalUserAsync(localUser);
+
+        #region 生成登录签名信息
+        string msg = $"Hello，{pubKey}";
+        msgdata = Encoding.UTF8.GetBytes(msg);
+        string sign = FairWalletHelper.SignData(priKey, msgdata);
+
+        #endregion
+
+
+
+        Nav("/");
+    }
+
+
+    /// <summary>
+    /// 第三方钱包
+    /// </summary>
+    /// <param name="type"></param>
+    /// <returns></returns>
+    async Task ToLogin(string type)
+    {
+        Int64 expTime = DateTime.UtcNow.AddYears(1).Ticks;
+        string[] data = await jsRuntime.InvokeAsync<string[]>($"wallet.sign", type, $"{expTime}");
+        Console.WriteLine($"{data[0]},{data[1]},{data[2]}");
+        if (data[0] == "err")
+        {
+            Toast(data[1]);
+            return;
+        }
+        fair.extensions.shared.entity.WalletAccount walletAccount = new shared.entity.WalletAccount();
+        walletAccount.Account = data[0];
+        walletAccount.ChainId = type;
+        walletAccount.AccountType = "outer";
+        walletAccount.TokenExpTime = expTime;
+        walletAccount.NickName = data[1];
+        walletAccount.Sign = data[2];
+
+        await accountService.ChangeAccountAsync(walletAccount);
+        LocalUser localUser = new LocalUser();
+        //缓存本地用户信息
+        await walletService.SaveLocalUserAsync(localUser);
+
+        Nav("/");
+
+
+    }
+
+
+    IJSObjectReference jsId;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<string>("window.tronWeb.toString");
+
+            hasTronWeb = true;
+        }
+        catch (Exception e)
+        {
+            hasTronWeb = false;
+        }
+        try
+        {
+            await jsRuntime.InvokeAsync<string>("window.ethereum.toString");
+
+            hasEthWeb = true;
+        }
+        catch (Exception e)
+        {
+            hasEthWeb = false;
+        }
+
+
+        Console.WriteLine(hasTronWeb);
+        jsId = await JSRuntime.InvokeAsync<IJSObjectReference>("fair.base.loadJs", "/_content/fair.extensions.wallet/js/wallet.js");
+
+
+        await base.OnInitializedAsync();
+    }
+
+
+
+    protected override ValueTask DisposeAsync(bool disposing)
+    {
+        jsId?.DisposeAsync();
+        return base.DisposeAsync(disposing);
+    }
+
+}

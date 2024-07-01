@@ -1,0 +1,52 @@
+﻿@* 切换钱包*@
+@page "/pay/Switchwallet/{ChainId}"
+@using System.Security.Cryptography;
+@using System.Text;
+@using TronNet;
+@layout SinglePage
+@inherits PageBase
+<UPage>
+    <TitlePanel>
+        @Localer["切换钱包"]
+    </TitlePanel>
+    <ActionPanel>
+
+        <UIcon IconType="IconType.Create" Text="@Localer["添加钱包"]" @onclick='()=>Nav($"/wallet/add/{ChainId}")' PhoneHideText></UIcon>
+    </ActionPanel>
+    <ContentPanel>
+         @if (NetUsers != null)
+        {
+            <UList>
+                @foreach (var user in NetUsers)
+                {
+
+                    <UListItem Clicked='(e,b)=>{user.SortId=DateTime.UtcNow.Ticks; this.Back();}' Title="@($"编号{user.Seed}: {user.PubKey.Substring(0,5)}**{user.PubKey.Substring(user.PubKey.Length-8)}")">
+                    </UListItem>
+                }
+
+            </UList>
+        }
+    </ContentPanel>
+    <TabPanel>
+        <ComTab Title="删除"></ComTab>
+        <ComTab Title="修改"></ComTab>
+    </TabPanel>
+</UPage>
+
+
+@code {
+    [Parameter]
+    public string ChainId { get; set; }
+
+    public List<BaseCoin> NetUsers;
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await walletService.GetLocalUserAsync();
+
+        NetUsers = user.UserCoin.Coins.Where(m => m.ChainId == ChainId).OrderByDescending(m => m.SortId).ToList();
+        base.OnInitializedAsync();
+    }
+}

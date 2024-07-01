@@ -1,0 +1,108 @@
+﻿@* 切换钱包*@
+@page "/wallet/add/{ChainId}"
+@using System.Security.Cryptography;
+@using System.Text;
+@using TronNet;
+@layout SinglePage
+@inherits PageBase
+
+<UPage ContentPadding>
+    <TitlePanel>
+        @($"{Localer["添加钱包"]} - {_CurChain.Name}")
+    </TitlePanel>
+    <ContentPanel>
+      
+         <UFormInput @bind-Value="@StartSeed" Label="起始编号"></UFormInput>
+        <UFormInput @bind-Value="@CoinCount" Label="钱包个数"></UFormInput>
+        <UFormInput @bind-Value="@signPassword" Label="签名密码"></UFormInput>
+        <br />
+        <br />
+        <button IsLarge IsFullwidth @onclick='()=>Create()'>@Localer["确认"]</button>
+       
+    </ContentPanel>
+</UPage>
+
+
+
+
+
+@code {
+    [Parameter]
+    public string ChainId { get; set; }
+
+    public List<BaseCoin> NetUsers;
+
+    string signPassword { get; set; } = "";
+
+    /// <summary>
+    /// 起始钱包索引号
+    /// </summary>
+    public string StartSeed { get; set; } = "2";
+
+    /// <summary>
+    /// 钱包个数
+    /// </summary>
+    public string CoinCount { get; set; } = "1";
+
+
+
+    /// <summary>
+    /// 创建账号
+    /// </summary>
+    void Create()
+    {
+        Task.Run(async () =>
+        {
+            //解密得出密钥
+            string priKey = walletService.GetRealPriKey(signPassword);
+            var localUser = await walletService.GetLocalUserAsync();
+            int startSeed = Int32.Parse(StartSeed);
+            int count = Int32.Parse(CoinCount);
+
+
+            for (int i = startSeed; count > 0; count--)
+            {
+                BaseCoin coin = null;
+                int curSeed = startSeed++;
+                string seed1PriKey = FairWalletHelper.GenerateSeedKey(priKey, curSeed.ToString());
+                switch (_CurChain.Type)
+                {
+                    case "tron":
+                        coin = new TronCoin();
+                        coin.PubKey = FairWalletHelper.GetTronWalletAddress(seed1PriKey);
+                        break;
+                    default:
+                        coin = new EthCoin();
+                        coin.PubKey = FairWalletHelper.GetEtherWalletAddress(seed1PriKey);
+                        break;
+
+                }
+                coin.ChainId = _CurChain.Id;
+
+                var oldCoin = localUser.UserCoin.Coins.FirstOrDefault(m => m.ChainId == _CurChain.Id && m.PubKey == coin.PubKey);
+                if (oldCoin == null)
+                {
+                    coin.Seed = curSeed;
+                    coin.UpdateTime = DateTime.UtcNow;
+                    coin.SortId = DateTime.UtcNow.Ticks;
+                    coin.Remark = "Coin" + curSeed;
+
+                    coin.Id = Guid.NewGuid();
+                    localUser.UserCoin.Coins.Add(coin);
+                }
+            }
+            await walletService.SaveLocalUserAsync();
+            Nav("/pay/wallet");
+
+
+        });
+
+    }
+
+    Chain _CurChain;
+
+    protected override async Task OnInitializedAsync()
+    {
+       _CurChain=  Chain.CoinNets.FirstOrDefault(m => m.Id == ChainId);
+    }
+}

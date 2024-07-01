@@ -1,0 +1,273 @@
+﻿@page "/wallet/{ChainId?}/{Account?}"
+@using fair.extensions.wallet.services.wallet
+@using System.Text;
+@using fair.extensions.wallet.entity;
+@inherits PageBase
+@layout SinglePage
+
+<UPage>
+    <TitlePanel>
+        <span style="font-size:1rem;">
+            @CurCoinNet?.Name
+        </span>
+    </TitlePanel>
+    <ActionPanel>
+        <UIcon Icon="exchange-four" Text="@Localer["切换网络"]" @onclick="()=>{isV=true;}" PhoneHideText></UIcon>
+     </ActionPanel>
+     <ControlPanel>
+         <div class="card" style="border-top:1px dashed #222;">
+             <CardHeader>
+                 <p class="card-header-title">
+                     @CurAccount?.Remark - @(CurAccount?.Seed == 0 ? "主钱包" : $"子钱包 {CurAccount?.Seed}")
+                </p>
+                <button class="card-header-icon">
+                    <UIcon Icon="exchange-four" Text="切换钱包" PhoneHideText @onclick='()=>{ Nav($"/pay/switchwallet/{CurCoinNet.Id}");}'></UIcon>
+                </button>
+            </CardHeader>
+            <CardContent>
+                <div>
+                     <USpanCopy Text="@CurAccount?.PubKey"></USpanCopy>
+                </div>
+                   @if (CurAccount != null && CurCoinNet.Type == "tron")
+                    {
+                    <ULevel IsMobile>
+                        <ULevelItem>
+                        能量: @((CurAccount as entity.TronCoin).EnergyLimit - (CurAccount as entity.TronCoin).EnergyUsed) /@((CurAccount as entity.TronCoin).EnergyLimit)
+                    </ULevelItem>
+                    <ULevelItem>
+                        带宽: @((CurAccount as entity.TronCoin).NetLimit - (CurAccount as entity.TronCoin).NetUsed) /@((CurAccount as entity.TronCoin).NetLimit)
+                    </ULevelItem>
+                </ULevel>
+                }
+             
+            </CardContent>
+              
+            
+        </div>
+     </ControlPanel>
+     <ContentPanel>
+
+ 
+        @if (CurAccount != null)
+        {
+            <UContainer class="has-background-white"
+                            IsFluid
+                            IsBottomMargin
+                            IsPadding>
+             <ULevel IsMobile>
+
+                 <ULevelItem @onclick='()=>{Nav($"/wallet/{walletProcesser.CurChain.Type}send/{CurAccount?.Id}");}'>
+                     <UIcon IconType="IconType.Detail" Text="@Localer["发送"]" Size="FontSize.Size3" Inline="false"></UIcon>
+                 </ULevelItem>
+
+                 <ULevelItem @onclick='()=>{Nav($"/pay/WalletShow/{CurAccount?.Id}");}'>
+                     <UIcon IconType="IconType.Detail" Text="@Localer["接收"]" Size="FontSize.Size3" Inline="false"></UIcon>
+                 </ULevelItem>
+                 <ULevelItem @onclick='()=>{Nav($"/wallet/prikey/{CurAccount?.Id}");}'>
+                     <UIcon IconType="IconType.Detail" Text="@Localer["私钥"]" Size="FontSize.Size3" Inline="false"></UIcon>
+                 </ULevelItem>
+                 @*
+                <ULevelItem @onclick='()=>{UserJump($"/pay/payRecords");}'>
+                <UIcon IconType="IconType.Detail" Text="@Localer["质押"]" Size="FontSize.Size3" Inline="false"></UIcon>
+
+                </ULevelItem> *@
+             </ULevel>
+         </UContainer>
+
+
+        }
+        @if (CurAccount != null)
+        {
+            <UContainer class="has-background-white"
+                            IsFluid
+                            IsBottomMargin
+                            IsPadding>
+
+             <Tabs>
+                 <TabItem Label="资产">
+                     <UList>
+                         @if (CurAccount?.Asets?.Count > 0)
+                            {
+                                foreach (var aset in CurAccount.Asets)
+                                {
+                                    <UListItem Title="@($"{aset.Name} {Math.Round( aset.Balance,6)}")" Icon="@($"/_content/fair.extensions.wallet/images.tokens/{aset.Name?.ToLower()}.svg")">
+                                    </UListItem>
+                                }
+                            }
+
+                            @*                   <UListItem Title="@Localer["手势密码"]" Icon="icon-ic_fluent_hand_draw_24_regular" IconColor="#F1C40E" Nav="Account/Setlock">
+                        </UListItem>*@
+
+                        </UList>
+
+                    </TabItem>
+                    <TabItem Label="NFT">暂未开放</TabItem>
+                </Tabs>
+            </UContainer>
+        }
+        else
+        {
+            <UContainer class="has-background-white">
+                未发现代币，<a href="/wallet/add/@CurCoinNet?.Id">添加一个账号</a>？
+            </UContainer>
+
+        }
+
+    </ContentPanel>
+</UPage>
+<Modal @ref="m1" IsActive="isV" ShowClose="@false" style="text-align:center;">
+    <Message>
+        <HeaderSlot>
+            <p>
+                @Localer["切换网络"]
+            </p>
+            <Delete @onclick="e=>isV=false"></Delete>
+        </HeaderSlot>
+        <BodySlot>
+            <UList>
+                @foreach (var net in Chain.CoinNets)
+                {
+
+                    <UListItem Clicked='(e,b)=>SetNetType(net)' Title="@(net.Name)">
+                    </UListItem>
+                }
+
+            </UList>
+
+        </BodySlot>
+    </Message>
+</Modal>
+@code {
+
+    bool isV = false;
+    Modal m1;
+    UNavbar navBar;
+    string Title { get; set; }
+    string NetType { get; set; }
+    WalletProcesser walletProcesser;
+    Chain CurCoinNet;
+
+    [Parameter]
+    public string ChainId { get; set; }
+
+    [Parameter]
+    public string Account { get; set; }
+
+    entity.BaseCoin? CurAccount { get; set; }
+
+    string GetDefaultCardTitle()
+    {
+        if (CurAccount?.PubKey != null)
+        {
+            return $"{CurAccount.Remark} - {CurAccount.Seed} ({CurAccount.PubKey.Substring(0, 5)}**{CurAccount.PubKey.Substring(CurAccount.PubKey.Length - 8)})";
+        }
+        return "";
+    }
+
+    async void SetNetType(Chain netType)
+    {
+        
+        CurCoinNet = netType;
+        walletProcesser = WalletProcesser.GetProcesser(netType);
+        CurAccount = localUser.UserCoin.Coins.Where(m => m.ChainId == netType.Id).OrderByDescending(m => m.SortId).FirstOrDefault();
+        if (CurAccount != null)
+        {
+            CurAccount.SortId = DateTime.UtcNow.Ticks;
+            await walletService.SaveLocalUserAsync();
+            Console.WriteLine(CurAccount.SortId);
+        }
+
+        isV = false;
+        this.InvokeAsync(() => StateHasChanged());
+
+    }
+
+
+    LocalUser localUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Console.WriteLine("当前钱包。。。");
+        localUser = await walletService.GetLocalUserAsync();
+        entity.BaseCoin firstUser = null;
+        if (!string.IsNullOrEmpty(ChainId))
+        {
+            if (!string.IsNullOrEmpty(Account))
+            {
+                firstUser = localUser.UserCoin.Coins.Where(m => m.ChainId == ChainId && m.PubKey == Account).FirstOrDefault();
+            }
+            else
+            {
+                firstUser = localUser.UserCoin.Coins.Where(m => m.ChainId == ChainId).OrderByDescending(m => m.SortId).FirstOrDefault();
+            }
+        }
+        else
+        {
+            firstUser = localUser.UserCoin.Coins.OrderByDescending(m => m.SortId).FirstOrDefault();
+        }
+        if (firstUser != null)
+        {
+            var netType = Chain.CoinNets.FirstOrDefault(m => m.Id == firstUser.ChainId);
+            SetNetType(netType);
+            LoadAccunt();
+        }
+        base.OnInitializedAsync();
+    }
+
+    bool disposing = false;
+    protected override ValueTask DisposeAsync(bool disposing)
+    {
+        this.disposing = true;
+        return base.DisposeAsync(disposing);
+    }
+
+
+
+
+    void LoadAccunt()
+    {
+
+
+        Task.Run(async () =>
+        {
+            while (!this.disposing)
+            {
+                try
+                {
+                    var data = CurAccount;
+                    if (data?.ChainId != CurCoinNet.Id)
+                    {
+                        await Task.Delay(100);
+                        continue;
+                    }
+
+                   await walletProcesser?.UpdateAssets(data);
+                    if (data == CurAccount && !this.disposing)
+                    {
+                        await this.InvokeAsync(() => this.StateHasChanged());
+                        for (int i = 0; i < 50; i++)
+                        {
+                            if (data != CurAccount || !this.disposing) break;
+                            await Task.Delay(500);
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(100);
+
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                }
+                await Task.Delay(2000);
+
+            }
+
+        });
+    }
+
+
+
+}

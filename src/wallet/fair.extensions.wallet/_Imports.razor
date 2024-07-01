@@ -1,0 +1,25 @@
+﻿@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.Extensions.Localization
+@using System.IO
+@using Microsoft.JSInterop
+@using fair.ui
+@using System.Dynamic;
+@using BulmaRazor.Components;
+
+@using fair.extensions.shared.services;
+@using fair.extensions.wallet.entity;
+@using fair.extensions.wallet.services;
+@using System.Linq.Expressions;
+@using fair.extensions.shared
+@using fair.extensions.shared.coms
+@inject IJSRuntime jsRuntime;
+@inject fair.extensions.shared.localization.GensysLocaler Localer
+@inject IAPIHttpClient httpClient;
+@inject NavigationManager navManager;
+@inject WalletService walletService;
+@inject IAccountService accountService;

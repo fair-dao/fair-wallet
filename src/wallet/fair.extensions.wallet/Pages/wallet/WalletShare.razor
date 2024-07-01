@@ -1,0 +1,49 @@
+﻿@* QR显示*@
+@page "/pay/WalletShow/{Id}"
+@layout SinglePage
+@inherits PageBase
+<UPage ContentPadding>
+    <TitlePanel>
+        @Localer["接收代币"]
+    </TitlePanel>
+    <ContentPanel>
+        @if (Coin != null)
+        {
+            <div style="color:blue;">@Coin.Remark - @Coin.Seed </div>
+            <div style="width:100%;text-align:center;">
+                <UQRCode Data="@Coin.PubKey"></UQRCode>
+
+                <div>(<USpanCopy Text="@Coin.PubKey"></USpanCopy>)</div>
+            </div>
+        }
+    </ContentPanel>
+</UPage>
+
+@code {
+
+
+
+    [Parameter]
+    public string Id { get; set; }
+
+    public entity.BaseCoin Coin;
+    protected override Task OnInitializedAsync()
+    {
+        Task.Run(async () =>
+        {
+            Guid id = Guid.Parse(Id);
+            var user = await walletService.GetLocalUserAsync();
+            entity.BaseCoin coin = user.UserCoin.Coins.FirstOrDefault(m => m.Id == id);
+
+            if (coin != null) Coin = coin;
+
+            this.InvokeAsync(() => this.StateHasChanged());
+
+        });
+
+        return base.OnInitializedAsync();
+    }
+}
+
+
+

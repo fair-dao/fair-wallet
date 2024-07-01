@@ -1,0 +1,65 @@
+﻿@page "/wallet/prikey/{Id}"
+@inherits PageBase
+
+<UPage ContentPadding>
+    <TitlePanel>
+        @Localer["导出私钥"]
+    </TitlePanel>
+    <ContentPanel>
+
+        <UNotification Color="Color.Warning">为了您的私钥或助记语安全，建议您先关闭其它程序，切换到飞行模式,并观察四周是否有人偷窥，确保安全后再进行操作。</UNotification>
+        @if (coin != null)
+        {
+            <div>@Localer["账号"]:</div>
+            <div>@coin?.PubKey</div>
+            @if (string.IsNullOrEmpty(priKey))
+            {
+                <UForm OnSubmit="ShowPassword" SubmitButtonText="@Localer["显示私钥"]">
+                    <UFormInput @bind-Value="@password" Type="password" Label="交易密码" ErrMsg="请输入交易密码" Required Vail="^[\S]{8,255}$"></UFormInput>
+                     <br />
+                 </UForm>
+            }
+           
+                @if (priKey?.Length >= 32)
+                {
+                    <div>
+                        您的私钥：
+                        <br />
+                    <UQRCode Data="@priKey"></UQRCode>
+
+                    <USpanCopy Text="@priKey"></USpanCopy>
+                    </div>
+                }
+              
+
+
+        }
+    </ContentPanel>
+</UPage>
+
+@code {
+    entity.BaseCoin coin;
+    string priKey = "";
+    string password { get; set; }
+    [Parameter]
+    public string Id { get; set; }
+    protected async override Task OnInitializedAsync()
+    {
+        Guid id = Guid.Parse(Id);
+        var user = await walletService.GetLocalUserAsync();
+        coin = user.UserCoin.Coins.FirstOrDefault(m => m.Id == id);
+        base.OnInitializedAsync();
+    }
+
+    void ShowPassword()
+    {
+        try
+        {
+            priKey = walletService.GetSeedPriKey(password, coin.Seed);
+        }
+        catch (fair.extensions.shared.exs.PasswordException e)
+        {
+            Toast("交易密码错误，请重试");
+        }
+    }
+}
